@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 import os
 
+import requests
 import streamlit as st
 from dotenv import load_dotenv
-import requests
 
 from agents.graph import invoke_graph
 

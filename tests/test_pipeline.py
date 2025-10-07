@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest import mock
 
 
-
 class PipelineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List
+
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-import textwrap
 
 from ingestion.vectorstore import raw_docs_dir
 

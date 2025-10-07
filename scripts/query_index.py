@@ -22,7 +22,8 @@ def query_index(query: str, k: int = 4, collection_name: str = COLLECTION_NAME) 
     )
 
     print("\nTop matches:")
-    for i, (doc, meta, dist) in enumerate(zip(res["documents"][0], res["metadatas"][0], res["distances"][0]), start=1):
+    rows = zip(res["documents"][0], res["metadatas"][0], res["distances"][0], strict=True)
+    for i, (doc, meta, dist) in enumerate(rows, start=1):
         src = meta.get("filename", meta.get("source", ""))
         print(f"[{i}] {meta.get('title', '')} (p{meta.get('page', '?')}) — {src} | distance={dist:.4f}")
         snippet = doc.replace("\n", " ")

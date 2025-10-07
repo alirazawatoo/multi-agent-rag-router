@@ -1,0 +1,9 @@
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "I", "B"]
+
+[lint.per-file-ignores]
+# Synthetic document prose reads better unwrapped.
+"scripts/generate_pdfs.py" = ["E501"]

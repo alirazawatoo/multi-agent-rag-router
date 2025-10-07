@@ -94,7 +94,7 @@ def retriever_node(state: AgentState) -> AgentState:
             n_results=min(state.get("top_k", 4), collection.count()),
             include=["distances", "metadatas", "documents"],
         )
-        for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
+        for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0], strict=True):
             contexts.append({"document": doc, "metadata": meta, "distance": dist})
     return {"contexts": contexts, "log": [*state.get("log", []), f"Retriever → Compose ({len(contexts)} passages)"]}
 

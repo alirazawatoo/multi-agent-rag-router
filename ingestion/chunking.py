@@ -1,7 +1,8 @@
 from __future__ import annotations
-from pathlib import Path
-from typing import List, Dict
+
 import re
+from pathlib import Path
+from typing import Dict, List
 
 
 def extract_text_from_pdf(pdf_path: Path) -> List[Dict]:
