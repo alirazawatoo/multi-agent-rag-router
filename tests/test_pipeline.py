@@ -1,4 +1,4 @@
-"""End to end: generate the synthetic PDFs, index them with the hash embedder, query the graph."""
+"""End to end: generate the synthetic PDFs, index them with the hash embedder, ask the graph."""
 import os
 import tempfile
 import unittest
@@ -18,6 +18,7 @@ class PipelineTests(unittest.TestCase):
                 "RAW_DOCS_DIR": str(root / "raw"),
                 "CHROMA_DB_DIR": str(root / "chroma"),
                 "EMBEDDING_BACKEND": "hash",
+                "LLM_PROVIDER": "stub",
             },
         )
         cls.env.start()
@@ -41,6 +42,8 @@ class PipelineTests(unittest.TestCase):
         result = invoke_graph("How do I re-send an invoice to a partner?", top_k=3)
         self.assertEqual(result["intent"], "knowledge")
         self.assertEqual(result["contexts"][0]["metadata"]["filename"], "Finance_Processes_Guide.pdf")
+        self.assertIn("[Finance_Processes_Guide.pdf p1]", result["answer"])
+        self.assertTrue(result["citation_shape_present"])
         self.assertEqual(result["log"][0], "Router → Knowledge")
 
     def test_rebuilding_does_not_duplicate_chunks(self):
