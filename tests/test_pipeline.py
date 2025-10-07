@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from fastapi.testclient import TestClient
+
 
 class PipelineTests(unittest.TestCase):
     @classmethod
@@ -56,6 +58,21 @@ class PipelineTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "--rebuild"):
             open_collection(HashingEmbedder(dimensions=64))
+
+
+    def test_api_ask_returns_sources_and_action_proposals(self):
+        from apps.api.main import app
+
+        client = TestClient(app)
+        self.assertGreaterEqual(client.get("/health").json()["indexed_chunks"], 6)
+        body = client.post("/ask", json={"query": "When are payments issued?", "top_k": 2}).json()
+        self.assertEqual(body["intent"], "knowledge")
+        self.assertEqual(len(body["sources"]), 2)
+        action = client.post("/ask", json={"query": "Pause 'Chicken Burger' until 6pm"}).json()
+        self.assertEqual(action["proposed_action"]["item"], "Chicken Burger")
+        self.assertEqual(action["sources"], [])
+        self.assertEqual(client.post("/ask", json={"query": ""}).status_code, 422)
+
 
 
 if __name__ == "__main__":

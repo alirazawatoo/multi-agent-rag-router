@@ -7,99 +7,105 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from agents.graph import invoke_graph
+from ingestion.vectorstore import get_embedder, open_collection
 
-# ---- Env and Config ----
 load_dotenv()
-# ---- UI ----
-st.set_page_config(page_title="PWB Agentic POC", layout="wide")
+ENDPOINTS = {"pause_item": "/pause_item", "unpause_item": "/unpause_item", "update_hours": "/update_hours"}
+
+st.set_page_config(page_title="Document routing agent", layout="wide")
 st.title("Document questions and proposed actions")
-st.caption("Local RAG prototype · Citation formatting is checked; factual grounding is not verified.")
+
+
+embedder_name = get_embedder().name
+provider = os.environ.get("LLM_PROVIDER", "stub")
+st.caption(
+    f"Embeddings: {embedder_name} · Answers: {provider} · "
+    "Citation formatting is checked; factual grounding is not verified."
+)
 
 with st.sidebar:
     st.subheader("Settings")
-    top_k = st.slider("Top-K retrieved", 2, 8, 4)
+    top_k = st.slider("Passages to retrieve", 2, 8, 4)
     style = st.selectbox("Response style", ["detailed", "concise"], index=0)
-    temperature = st.slider("Temperature", 0.0, 0.8, 0.2, 0.05)
+    temperature = st.slider("Temperature (Groq only)", 0.0, 0.8, 0.2, 0.05, disabled=provider != "groq")
 
-if "history" not in st.session_state:
-    st.session_state.history = []  # [{role, content}]
-if "decision_log" not in st.session_state:
-    st.session_state.decision_log = []  # list of strings for now
+st.session_state.setdefault("history", [])
+st.session_state.setdefault("last_result", None)
+st.session_state.setdefault("action_outcome", None)
 
-col1, col2 = st.columns([2, 1])
+if open_collection(get_embedder()).count() == 0:
+    st.warning(
+        "No documents are indexed yet, so questions will return no sources. "
+        "Run `python -m scripts.generate_pdfs` and `python -m ingestion.build_index`, then reload."
+    )
 
-# Chat-style input
-prompt = st.chat_input("Ask a question about finance, ops, onboarding, or platforms")
+prompt = st.chat_input("Ask about finance, menus, onboarding or platforms, or request a pause/hours change")
 if prompt:
-    # Run LangGraph pipeline with style/temperature controls
-    st.session_state.decision_log = []  # reset per turn for clarity
-    result = invoke_graph(query=prompt, top_k=top_k, style=style, temperature=temperature)
+    with st.spinner("Routing and retrieving…"):
+        result = invoke_graph(query=prompt, top_k=top_k, style=style, temperature=temperature)
+    st.session_state.history += [
+        {"role": "user", "content": prompt},
+        {"role": "assistant", "content": result.get("answer", "")},
+    ]
+    st.session_state.last_result = result
+    st.session_state.action_outcome = None
 
-    # Chat transcript: show user message immediately
-    st.session_state.history.append({"role": "user", "content": prompt})
+chat_col, side_col = st.columns([2, 1], gap="large")
 
-    # Display the same draft that passed through the graph's citation-shape check.
-    # A second streamed synthesis would produce an unchecked answer and double provider work.
-    streamed = result.get("answer", "")
+with chat_col:
+    st.subheader("Conversation")
+    if not st.session_state.history:
+        st.info(
+            "Try “How do I re-send an invoice?” for a document answer, "
+            "or “Pause 'Chicken Burger' until 6pm” for an action proposal."
+        )
+    for msg in st.session_state.history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-    # Persist the final assistant message and logs
-    st.session_state.history.append({"role": "assistant", "content": streamed})
-    st.session_state.decision_log.extend(result.get("log", []))
-    st.session_state["last_result"] = {**result, "answer": streamed}
+last = st.session_state.last_result or {}
 
-with col1:
-    st.subheader("Chat")
-    if st.session_state.history:
-        for msg in st.session_state.history:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-    else:
-        st.info("Ask a question to get started.")
-
-with col2:
+with side_col:
     st.subheader("Workflow trace")
-    if st.session_state.decision_log:
-        for step in st.session_state.decision_log:
-            st.code(step)
+    if last.get("log"):
+        st.code("\n".join(last["log"]), language=None)
+    else:
+        st.caption("The node-by-node path of the last request appears here.")
 
-    st.subheader("Retrieved Sources")
-    last = st.session_state.get("last_result")
-    if last and last.get("contexts"):
+    if last.get("intent") == "knowledge":
+        st.subheader("Retrieved sources")
+        if not last.get("contexts"):
+            st.caption("No passages were retrieved.")
         for i, ctx in enumerate(last.get("contexts", []), start=1):
             meta = ctx.get("metadata", {})
-            src = meta.get("filename", meta.get("source", ""))
-            page = meta.get("page", "?")
-            st.markdown(f"**[{i}] {src} (p{page}) — distance={ctx.get('distance', 0):.4f}**")
-            st.caption(meta.get("title", ""))
-            st.write(ctx.get("document", ""))
+            label = f"[{i}] {meta.get('filename', '')} p{meta.get('page', '?')} · distance {ctx.get('distance', 0):.3f}"
+            with st.expander(label):
+                st.write(ctx.get("document", ""))
 
-    # Action approval flow (stub)
-    st.subheader("Proposed Action")
-    last = st.session_state.get("last_result")
-    proposed = (last or {}).get("proposed_action")
-    if proposed and proposed.get("type") != "unknown":
-        st.json(proposed)
-        colA, colB = st.columns(2)
-        with colA:
-            approve = st.button("Approve Action", type="primary")
-        with colB:
-            deny = st.button("Deny Action")
-        if approve:
-            ops_url = os.environ.get("OPS_API_URL", "http://localhost:8001")
-            operator = os.environ.get("OPERATOR_NAME", "demo_user")
-            try:
-                endpoint = {
-                    "pause_item": "/pause_item",
-                    "unpause_item": "/unpause_item",
-                    "update_hours": "/update_hours",
-                }.get(proposed.get("type"), "/unknown")
-                payload = {**proposed, "operator": operator}
-                r = requests.post(f"{ops_url}{endpoint}", json=payload, timeout=10)
-                if r.ok:
-                    st.success("Demo connector updated its local state and audit file.")
-                else:
-                    st.error(f"Action failed: {r.status_code} {r.text}")
-            except Exception as e:
-                st.error(f"Action error: {e}")
-    else:
-        st.caption("No action proposed.")
+    if last.get("intent") == "action":
+        st.subheader("Proposed action")
+        proposed = last.get("proposed_action") or {}
+        if proposed.get("type", "unknown") == "unknown":
+            st.caption("Nothing actionable was extracted from the request.")
+        else:
+            st.json(proposed)
+            outcome = st.session_state.action_outcome
+            approve_col, deny_col = st.columns(2)
+            approve = approve_col.button("Approve", type="primary", disabled=outcome is not None)
+            deny = deny_col.button("Deny", disabled=outcome is not None)
+            if approve:
+                ops_url = os.environ.get("OPS_API_URL", "http://localhost:8001")
+                payload = {**proposed, "operator": os.environ.get("OPERATOR_NAME", "demo_user")}
+                try:
+                    r = requests.post(f"{ops_url}{ENDPOINTS[proposed['type']]}", json=payload, timeout=10)
+                    outcome = ("success", r.json()["message"]) if r.ok else ("error", f"{r.status_code}: {r.text}")
+                except requests.RequestException as exc:
+                    outcome = ("error", f"Could not reach the ops connector at {ops_url}: {exc}")
+                st.session_state.action_outcome = outcome
+                st.rerun()
+            if deny:
+                st.session_state.action_outcome = ("info", "Denied. Nothing was sent to the ops connector.")
+                st.rerun()
+            if outcome:
+                kind, message = outcome
+                getattr(st, kind)(message)
