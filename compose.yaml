@@ -1,0 +1,38 @@
+# Offline demo: hash embeddings, stub answers, no API keys.
+x-app: &app
+  build: .
+  image: document-routing-agent:local
+  environment:
+    EMBEDDING_BACKEND: hash
+    LLM_PROVIDER: stub
+    OPS_API_URL: http://ops:8001
+    OPERATOR_NAME: demo_user
+  volumes:
+    - docdata:/app/data
+
+services:
+  index:
+    <<: *app
+    command: sh -c "python -m scripts.generate_pdfs && python -m ingestion.build_index --rebuild"
+
+  api:
+    <<: *app
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      index: {condition: service_completed_successfully}
+
+  ops:
+    <<: *app
+    command: uvicorn connectors.ops_stub_api.main:app --host 0.0.0.0 --port 8001
+    ports: ["127.0.0.1:8001:8001"]
+
+  ui:
+    <<: *app
+    command: python -m streamlit run apps/ui/streamlit_app.py --server.address 0.0.0.0 --server.headless true
+    ports: ["127.0.0.1:8501:8501"]
+    depends_on:
+      index: {condition: service_completed_successfully}
+      ops: {condition: service_started}
+
+volumes:
+  docdata:

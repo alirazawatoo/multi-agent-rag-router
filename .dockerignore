@@ -1,0 +1,15 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+.venv
+venv
+project_venv
+**/__pycache__
+.ruff_cache
+data/chroma
+data/raw/*.pdf
+data/ops_state.json
+data/audit.log
+docs
