@@ -27,7 +27,7 @@ HASH_DIMENSIONS = 384
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 # Very common words carry no retrieval signal for a bag-of-words embedder.
-_STOPWORDS = frozenset(
+STOPWORDS = frozenset(
     "a an and are as at be by can do does for from how i in is it of on or should "
     "the this to what when where which who why with you your".split()
 )
@@ -50,7 +50,7 @@ class HashingEmbedder:
     def _embed_one(self, text: str) -> List[float]:
         vector = [0.0] * self.dimensions
         for token in _TOKEN_RE.findall(text.lower()):
-            if token in _STOPWORDS:
+            if token in STOPWORDS:
                 continue
             digest = hashlib.blake2b(token.encode(), digest_size=8).digest()
             index = int.from_bytes(digest[:4], "little") % self.dimensions

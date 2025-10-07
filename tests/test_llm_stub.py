@@ -22,12 +22,17 @@ class StubAnswerTests(unittest.TestCase):
     def test_quotes_the_most_relevant_sentence_with_a_citation(self):
         answer = stub_answer("When must disputes be raised?", CONTEXTS)
         self.assertIn("Disputes must be raised within 7 days of receipt. [Finance_Processes_Guide.pdf p1]", answer)
-        self.assertIn("[System_Onboarding_and_Usage.pdf p1]", answer)
+        self.assertNotIn("[System_Onboarding_and_Usage.pdf p1]", answer)
         self.assertTrue(answer.startswith("[stub]"))
 
     def test_concise_style_limits_the_number_of_passages(self):
-        many = CONTEXTS * 3
+        many = CONTEXTS[:1] * 6
         self.assertEqual(stub_answer("payments", many, style="concise").count("\n"), 2)
+
+    def test_passages_matching_only_on_filler_words_are_skipped(self):
+        answer = stub_answer("How do I re-send an invoice?", CONTEXTS[1:])
+        self.assertNotIn("[System_Onboarding_and_Usage.pdf p1]", answer)
+        self.assertIn("no retrieved passage shares a word", answer)
 
     def test_no_contexts_explains_how_to_build_the_index(self):
         self.assertIn("ingestion.build_index", stub_answer("anything", []))

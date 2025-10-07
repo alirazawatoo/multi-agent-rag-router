@@ -13,6 +13,8 @@ from typing import Dict, List
 
 from dotenv import load_dotenv
 
+from ingestion.vectorstore import STOPWORDS
+
 load_dotenv()
 
 DEFAULT_GROQ_MODEL = "openai/gpt-oss-20b"
@@ -48,11 +50,15 @@ def format_context_block(contexts: List[Dict]) -> str:
     return "\n\n---\n\n".join(f"Source: {citation(c)[1:-1]}\n{c.get('document', '')}" for c in contexts)
 
 
+def _content_words(text: str) -> set:
+    return {w for w in _WORD_RE.findall(text.lower()) if len(w) > 2 and w not in STOPWORDS}
+
+
 def _best_sentence(query_words: set, text: str) -> str:
-    sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(text) if s.strip()]
-    if not sentences:
-        return ""
-    return max(sentences, key=lambda s: len(query_words & set(_WORD_RE.findall(s.lower()))))
+    """The sentence sharing the most content words with the query, or "" if none shares any."""
+    scored = [(len(query_words & _content_words(s)), s.strip()) for s in _SENTENCE_SPLIT_RE.split(text) if s.strip()]
+    best = max(scored, default=(0, ""), key=lambda pair: pair[0])
+    return best[1] if best[0] else ""
 
 
 def stub_answer(query: str, contexts: List[Dict], style: str | None = None) -> str:
@@ -62,12 +68,14 @@ def stub_answer(query: str, contexts: List[Dict], style: str | None = None) -> s
             "`python -m ingestion.build_index` and ask again."
         )
     limit = 2 if (style or "").lower() == "concise" else 4
-    query_words = set(_WORD_RE.findall(query.lower()))
+    query_words = _content_words(query)
     lines = []
     for context in contexts[:limit]:
         sentence = _best_sentence(query_words, context.get("document", ""))
         if sentence:
             lines.append(f"{len(lines) + 1}. {sentence} {citation(context)}")
+    if not lines:
+        return "[stub] No language model was called, and no retrieved passage shares a word with the question."
     header = "[stub] No language model was called. The closest indexed passages say:"
     return "\n".join([header, *lines])
 
