@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from pathlib import Path
 from typing import List, Dict
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import textwrap
+
+from ingestion.vectorstore import raw_docs_dir
 
 MARGIN = 50
 LINE_HEIGHT = 16
@@ -48,8 +52,8 @@ def create_pdf(file_path: Path, title: str, sections: List[Dict[str, str]]):
     c.save()
 
 
-def main():
-    raw_dir = Path("data/raw")
+def main(raw_dir: Path | None = None):
+    raw_dir = raw_dir or raw_docs_dir()
 
     create_pdf(
         raw_dir / "Finance_Processes_Guide.pdf",
@@ -250,7 +254,7 @@ def main():
         ],
     )
 
-    print("Generated sample PDFs in data/raw/")
+    print(f"Generated sample PDFs in {raw_dir}/")
 
 
 if __name__ == "__main__":

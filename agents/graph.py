@@ -1,39 +1,15 @@
 from __future__ import annotations
 
-import os
 import re
-from pathlib import Path
-from typing import Dict, List, Optional, TypedDict
+from typing import Dict, List, TypedDict
 
-import chromadb
 from dotenv import load_dotenv
 from langgraph.graph import END, START, StateGraph
-from sentence_transformers import SentenceTransformer
 
 from agents.llm import answer_with_citations
+from ingestion.vectorstore import get_embedder, open_collection
 
 load_dotenv()
-CHROMA_DB_DIR = os.environ.get("CHROMA_DB_DIR", "data/chroma")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
-COLLECTION_NAME = "pwb_docs"
-
-_embedder: Optional[SentenceTransformer] = None
-_collection = None
-
-
-def get_embedder() -> SentenceTransformer:
-    global _embedder
-    if _embedder is None:
-        _embedder = SentenceTransformer(EMBEDDING_MODEL)
-    return _embedder
-
-
-def get_collection():
-    global _collection
-    if _collection is None:
-        client = chromadb.PersistentClient(path=str(Path(CHROMA_DB_DIR)))
-        _collection = client.get_or_create_collection(COLLECTION_NAME)
-    return _collection
 
 
 class AgentState(TypedDict, total=False):
@@ -109,12 +85,17 @@ def router_node(state: AgentState) -> AgentState:
 
 
 def retriever_node(state: AgentState) -> AgentState:
-    coll = get_collection()
-    q_emb = get_embedder().encode([state["query"]], normalize_embeddings=True).tolist()
-    res = coll.query(query_embeddings=q_emb, n_results=state.get("top_k", 4), include=["distances", "metadatas", "documents"])
+    embedder = get_embedder()
+    collection = open_collection(embedder)
     contexts: List[Dict] = []
-    for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
-        contexts.append({"document": doc, "metadata": meta, "distance": dist})
+    if collection.count():
+        res = collection.query(
+            query_embeddings=embedder.embed([state["query"]]),
+            n_results=min(state.get("top_k", 4), collection.count()),
+            include=["distances", "metadatas", "documents"],
+        )
+        for doc, meta, dist in zip(res["documents"][0], res["metadatas"][0], res["distances"][0]):
+            contexts.append({"document": doc, "metadata": meta, "distance": dist})
     return {"contexts": contexts, "log": [*state.get("log", []), f"Retriever → Compose ({len(contexts)} passages)"]}
 
 

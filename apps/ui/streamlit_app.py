@@ -1,36 +1,14 @@
 from __future__ import annotations
 import os
-from pathlib import Path
-from typing import List, Dict
 
 import streamlit as st
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
-import chromadb
 import requests
 
 from agents.graph import invoke_graph
 
 # ---- Env and Config ----
 load_dotenv()
-CHROMA_DB_DIR = os.environ.get("CHROMA_DB_DIR", "data/chroma")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
-COLLECTION_NAME = "pwb_docs"
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-
-# ---- Lazy singletons ----
-@st.cache_resource(show_spinner=False)
-def get_embedder():
-    return SentenceTransformer(EMBEDDING_MODEL)
-
-@st.cache_resource(show_spinner=False)
-def get_chroma():
-    client = chromadb.PersistentClient(path=str(Path(CHROMA_DB_DIR)))
-    return client.get_or_create_collection(COLLECTION_NAME)
-
-def embed_query(texts: List[str]):
-    model = get_embedder()
-    return model.encode(texts, normalize_embeddings=True).tolist()
 # ---- UI ----
 st.set_page_config(page_title="PWB Agentic POC", layout="wide")
 st.title("Document questions and proposed actions")
