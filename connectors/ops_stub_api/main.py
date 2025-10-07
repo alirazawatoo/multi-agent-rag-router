@@ -1,16 +1,13 @@
 from __future__ import annotations
+
 import json
+import os
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any
-from datetime import datetime
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict
-
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-STATE_FILE = DATA_DIR / "ops_state.json"
-AUDIT_FILE = DATA_DIR / "audit.log"
 
 
 class ActionPayload(BaseModel):
@@ -30,23 +27,41 @@ class OpsState(BaseModel):
     hours_note: str = ""
 
 
+def data_dir() -> Path:
+    return Path(os.environ.get("OPS_DATA_DIR", "data"))
+
+
+def state_file() -> Path:
+    return data_dir() / "ops_state.json"
+
+
+def audit_file() -> Path:
+    return data_dir() / "audit.log"
+
+
 def load_state() -> OpsState:
-    if STATE_FILE.exists():
-        try:
-            return OpsState(**json.loads(STATE_FILE.read_text()))
-        except Exception:
-            pass
-    return OpsState()
+    path = state_file()
+    if not path.exists():
+        return OpsState()
+    return OpsState.model_validate_json(path.read_text())
 
 
 def save_state(state: OpsState) -> None:
-    STATE_FILE.write_text(state.model_dump_json(indent=2))
+    data_dir().mkdir(parents=True, exist_ok=True)
+    state_file().write_text(state.model_dump_json(indent=2))
 
 
 def append_audit(entry: Dict[str, Any]) -> None:
-    entry["ts"] = datetime.utcnow().isoformat() + "Z"
-    with AUDIT_FILE.open("a") as f:
+    data_dir().mkdir(parents=True, exist_ok=True)
+    entry["ts"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    with audit_file().open("a") as f:
         f.write(json.dumps(entry) + "\n")
+
+
+def require_type(payload: ActionPayload, expected: str) -> None:
+    # The UI posts the proposal as-is; a mismatch means the wrong endpoint was chosen.
+    if payload.type != expected:
+        raise HTTPException(status_code=400, detail=f"Payload type '{payload.type}' does not match /{expected}")
 
 
 app = FastAPI(title="Ops Stub API", version="0.1.0")
@@ -59,6 +74,7 @@ def health():
 
 @app.post("/pause_item")
 def pause_item(payload: ActionPayload):
+    require_type(payload, "pause_item")
     if not payload.item:
         raise HTTPException(status_code=400, detail="Missing 'item' in payload")
     state = load_state()
@@ -70,6 +86,7 @@ def pause_item(payload: ActionPayload):
 
 @app.post("/unpause_item")
 def unpause_item(payload: ActionPayload):
+    require_type(payload, "unpause_item")
     if not payload.item:
         raise HTTPException(status_code=400, detail="Missing 'item' in payload")
     state = load_state()
@@ -81,6 +98,7 @@ def unpause_item(payload: ActionPayload):
 
 @app.post("/update_hours")
 def update_hours(payload: ActionPayload):
+    require_type(payload, "update_hours")
     state = load_state()
     note = payload.details or payload.original_query or "updated hours"
     state.hours_note = note
@@ -97,11 +115,12 @@ def get_state():
 @app.get("/audit")
 def get_audit():
     entries = []
-    if AUDIT_FILE.exists():
-        with AUDIT_FILE.open() as f:
+    path = audit_file()
+    if path.exists():
+        with path.open() as f:
             for line in f:
                 try:
                     entries.append(json.loads(line))
-                except Exception:
-                    pass
+                except json.JSONDecodeError:
+                    continue
     return {"count": len(entries), "entries": entries}
